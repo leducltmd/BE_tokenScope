@@ -79,7 +79,12 @@ describe('Module Auth — API TokenScope', () => {
 
       const res = await request(app)
         .post('/api/auth/register')
-        .send({ name: 'Nguyễn Văn Test', email, password: 'Abc12345' });
+        .send({
+          name: 'Nguyễn Văn Test',
+          birthDate: '1995-05-20',
+          email,
+          password: 'Abc12345',
+        });
 
       expect(res.status).toBe(201);
       expect(res.body.message).toBe('Đăng ký thành công.');
@@ -91,7 +96,12 @@ describe('Module Auth — API TokenScope', () => {
     it('báo lỗi khi email đã tồn tại', async () => {
       const res = await request(app)
         .post('/api/auth/register')
-        .send({ name: 'Test User', email: DEMO_EMAIL, password: 'Abc12345' });
+        .send({
+          name: 'Test User',
+          birthDate: '1995-05-20',
+          email: DEMO_EMAIL,
+          password: 'Abc12345',
+        });
 
       expect(res.status).toBe(409);
       expect(res.body.code).toBe('EMAIL_ALREADY_EXISTS');
@@ -102,6 +112,7 @@ describe('Module Auth — API TokenScope', () => {
         .post('/api/auth/register')
         .send({
           name: 'Test User',
+          birthDate: '1995-05-20',
           email: `weak.${Date.now()}@tokenscope.io`,
           password: 'abc',
         });

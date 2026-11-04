@@ -4,6 +4,10 @@ import express from 'express';
 import { isOriginAllowed } from './config';
 import { errorHandler, notFoundHandler } from './middlewares/error';
 import { authRouter } from './modules/auth/auth.routes';
+import { budgetsRouter } from './modules/budgets/budgets.routes';
+import { projectsRouter } from './modules/projects/projects.routes';
+import { providersRouter } from './modules/providers/providers.routes';
+import { usageRouter } from './modules/usage/usage.routes';
 
 export function createApp(): express.Express {
   const app = express();
@@ -32,6 +36,10 @@ export function createApp(): express.Express {
   });
 
   app.use('/api/auth', authRouter);
+  app.use('/api/providers', providersRouter);
+  app.use('/api/usage', usageRouter);
+  app.use('/api/projects', projectsRouter);
+  app.use('/api/budgets', budgetsRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

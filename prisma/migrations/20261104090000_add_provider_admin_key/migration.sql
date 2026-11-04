@@ -1,0 +1,20 @@
+BEGIN TRY
+
+BEGIN TRAN;
+
+-- AlterTable
+ALTER TABLE [dbo].[api_providers] ADD [adminKeyCipher] NVARCHAR(1000) NULL;
+ALTER TABLE [dbo].[api_providers] ADD [adminKeyLast4] NVARCHAR(1000) NULL;
+
+COMMIT TRAN;
+
+END TRY
+BEGIN CATCH
+
+IF @@TRANCOUNT > 0
+BEGIN
+    ROLLBACK TRAN;
+END;
+THROW
+
+END CATCH
