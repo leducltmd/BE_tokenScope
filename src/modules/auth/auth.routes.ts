@@ -5,6 +5,7 @@ import { validate } from '../../middlewares/validate';
 import {
   changePassword,
   forgotPassword,
+  googleLogin,
   login,
   logout,
   me,
@@ -14,6 +15,7 @@ import {
 import {
   changePasswordSchema,
   forgotPasswordSchema,
+  googleLoginSchema,
   loginSchema,
   refreshSchema,
   registerSchema,
@@ -23,6 +25,7 @@ export const authRouter = Router();
 
 authRouter.post('/register', validate(registerSchema), register);
 authRouter.post('/login', validate(loginSchema), login);
+authRouter.post('/google', validate(googleLoginSchema), googleLogin);
 authRouter.post('/forgot-password', validate(forgotPasswordSchema), forgotPassword);
 authRouter.post('/refresh', validate(refreshSchema), refresh);
 authRouter.post('/logout', logout);

@@ -66,8 +66,13 @@ export const changePasswordSchema = z.object({
   newPassword: passwordSchema,
 });
 
+export const googleLoginSchema = z.object({
+  idToken: z.string().trim().min(10, 'ID Token là bắt buộc.'),
+});
+
 export type RegisterDto = z.infer<typeof registerSchema>;
 export type LoginDto = z.infer<typeof loginSchema>;
 export type ForgotPasswordDto = z.infer<typeof forgotPasswordSchema>;
 export type RefreshDto = z.infer<typeof refreshSchema>;
 export type ChangePasswordDto = z.infer<typeof changePasswordSchema>;
+export type GoogleLoginDto = z.infer<typeof googleLoginSchema>;

@@ -4,6 +4,7 @@ import * as authService from './auth.service';
 import type {
   ChangePasswordDto,
   ForgotPasswordDto,
+  GoogleLoginDto,
   LoginDto,
   RefreshDto,
   RegisterDto,
@@ -47,6 +48,32 @@ export async function login(
     });
     res.status(200).json({
       message: 'Đăng nhập thành công.',
+      user: session.user,
+      accessToken: session.tokens.accessToken,
+      refreshToken: session.tokens.refreshToken,
+      expiresIn: session.tokens.expiresIn,
+      tokenType: session.tokens.tokenType,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** POST /api/auth/google — Đăng nhập bằng Google ID Token (Firebase). */
+export async function googleLogin(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const dto = req.body as GoogleLoginDto;
+    const session = await authService.loginWithGoogle({
+      idToken: dto.idToken,
+      userAgent: req.get('user-agent') ?? undefined,
+      ipAddress: req.ip,
+    });
+    res.status(200).json({
+      message: 'Đăng nhập Google thành công.',
       user: session.user,
       accessToken: session.tokens.accessToken,
       refreshToken: session.tokens.refreshToken,
