@@ -66,3 +66,37 @@ export async function recordAppUsageEvent(
     occurredAt: event.occurredAt.toISOString(),
   };
 }
+
+/**
+ * Gắn userId cho sự kiện "mồ côi" đã ghi trước khi người dùng đăng nhập.
+ *
+ * Sự kiện `app_open` được ghi khi app khởi động — lúc đó người dùng chưa
+ * đăng nhập nên `userId` là null. Sau khi đăng nhập, app gọi hàm này để gắn
+ * userId vào chính bản ghi cũ (không tạo bản ghi mới), tránh tính trùng
+ * "lượt mở ứng dụng".
+ *
+ * @returns số lượng bản ghi đã được gắn userId.
+ */
+export async function claimOrphanEvent(
+  userId: string | null,
+  sessionId?: string | null,
+  eventName?: string | null,
+): Promise<number> {
+  if (!userId) return 0;
+
+  const where: Record<string, unknown> = { userId: null };
+  if (sessionId) where.sessionId = sessionId;
+  if (eventName) where.eventName = eventName;
+
+  // Chỉ nhận sự kiện gần đây (trong 1 giờ) để tránh gắn nhầm phiên cũ.
+  const recent = new Date();
+  recent.setHours(recent.getHours() - 1);
+  where.occurredAt = { gte: recent };
+
+  const result = await prisma.appUsageEvent.updateMany({
+    where,
+    data: { userId },
+  });
+
+  return result.count;
+}

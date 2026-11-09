@@ -200,4 +200,49 @@ describe('Module Admin — API TokenScope', () => {
       expect(res.body.crashlytics.consoleUrl).toContain('crashlytics');
     });
   });
+
+  describe('POST /api/app-usage/claim', () => {
+    it('gắn userId cho sự kiện app_open ghi trước khi đăng nhập', async () => {
+      const sessionId = `sess-test-claim-${Date.now()}`;
+
+      // 1. Ghi sự kiện app_open khi chưa đăng nhập (userId = null).
+      const create = await request(app).post('/api/app-usage/events').send({
+        eventName: 'app_open',
+        sessionId,
+        platform: 'vitest',
+      });
+      expect(create.status).toBe(201);
+
+      const orphan = await prisma.appUsageEvent.findFirst({
+        where: { sessionId },
+      });
+      expect(orphan?.userId).toBeNull();
+
+      // 2. Người dùng đăng nhập → gọi claim để gắn userId vào bản ghi cũ.
+      const claim = await request(app)
+        .post('/api/app-usage/claim')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ sessionId, eventName: 'app_open' });
+
+      expect(claim.status).toBe(200);
+      expect(claim.body.claimed).toBe(1);
+
+      const claimed = await prisma.appUsageEvent.findFirst({
+        where: { sessionId },
+      });
+      expect(claimed?.userId).not.toBeNull();
+
+      // 3. Không tạo bản ghi trùng — số bản ghi trong phiên vẫn là 1.
+      const count = await prisma.appUsageEvent.count({ where: { sessionId } });
+      expect(count).toBe(1);
+    });
+
+    it('từ chối khi thiếu token', async () => {
+      const res = await request(app).post('/api/app-usage/claim').send({
+        eventName: 'app_open',
+      });
+
+      expect(res.status).toBe(401);
+    });
+  });
 });
