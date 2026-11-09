@@ -262,11 +262,21 @@ describe('Anthropic — kiểm tra kết nối độc lập hai loại khoá', (
 
     const modelsCall = captured.find((c) => c.url.pathname === '/v1/models');
     expect(modelsCall?.headers['anthropic-workspace-id']).toBe('wsp_abc123');
+
+    const probe = captured.find((c) => c.url.pathname.endsWith('/usage_report/messages'));
+    expect(probe?.headers['anthropic-workspace-id']).toBeUndefined();
+    expect(probe?.url.searchParams.get('workspace_ids[]')).toBe('wsp_abc123');
+    const start = probe?.url.searchParams.get('starting_at');
+    const end = probe?.url.searchParams.get('ending_at');
+    expect(start).toMatch(/^\d{4}-\d{2}-\d{2}T00:00:00\.000Z$/);
+    expect(end).toMatch(/^\d{4}-\d{2}-\d{2}T00:00:00\.000Z$/);
+    expect(Date.parse(end!) - Date.parse(start!)).toBe(86_400_000);
   });
 });
 
 describe('Anthropic — Usage Report & Cost Report', () => {
-  it('đọc Usage Report và Cost Report bằng Admin API Key', async () => {
+  it('đọc token và chi phí từ payload chính thức cho workspace đã chọn', async () => {
+    const workspaceId = 'wrkspc_test123';
     const captured = mockFetch((url) => {
       if (url.pathname.endsWith('/usage_report/messages')) {
         return {
@@ -280,10 +290,11 @@ describe('Anthropic — Usage Report & Cost Report', () => {
                     model: 'claude-sonnet-4-5',
                     uncached_input_tokens: 1000,
                     cache_read_input_tokens: 200,
-                    cache_creation_input_tokens: 100,
+                    cache_creation: {
+                      ephemeral_1h_input_tokens: 60,
+                      ephemeral_5m_input_tokens: 40,
+                    },
                     output_tokens: 500,
-                    request_count: 7,
-                    cost_usd: 0.42,
                   },
                 ],
               },
@@ -302,9 +313,17 @@ describe('Anthropic — Usage Report & Cost Report', () => {
               results: [
                 {
                   model: 'claude-sonnet-4-5',
-                  cost_usd: 0.42,
-                  quantity: 1800,
-                  quantity_unit: 'tokens',
+                  amount: '42.00',
+                  currency: 'USD',
+                  description: 'Claude Sonnet 4.5 Usage - Input Tokens',
+                  workspace_id: workspaceId,
+                },
+                {
+                  model: 'claude-sonnet-4-5',
+                  amount: '100.00',
+                  currency: 'USD',
+                  description: 'Claude Sonnet 4.5 Usage - Output Tokens',
+                  workspace_id: 'wrkspc_other',
                 },
               ],
             },
@@ -321,6 +340,7 @@ describe('Anthropic — Usage Report & Cost Report', () => {
       SECRET_KEY,
       30,
       ADMIN_KEY,
+      workspaceId,
     );
 
     expect(usage.supported).toBe(true);
@@ -330,19 +350,25 @@ describe('Anthropic — Usage Report & Cost Report', () => {
     // 1000 (uncached) + 200 (cache read) + 100 (cache creation)
     expect(point.inputTokens).toBe(1300);
     expect(point.outputTokens).toBe(500);
-    expect(point.requests).toBe(7);
     expect(point.cost).toBeCloseTo(0.42, 5);
     expect(point.date).toBe('2026-10-01');
 
     // Cả hai endpoint tổ chức đều dùng Admin API Key.
     const orgCalls = captured.filter((c) => c.url.pathname.includes('/organizations/'));
-    expect(orgCalls.length).toBeGreaterThanOrEqual(2);
+    expect(orgCalls).toHaveLength(2);
     for (const call of orgCalls) {
       expect(call.apiKey).toBe(ADMIN_KEY);
+      expect(call.headers['anthropic-workspace-id']).toBeUndefined();
+      expect(call.url.searchParams.get('starting_at')).toMatch(/^\d{4}-\d{2}-\d{2}T.*Z$/);
+      expect(call.url.searchParams.get('ending_at')).toMatch(/^\d{4}-\d{2}-\d{2}T.*Z$/);
     }
-    expect(
-      captured.some((c) => c.url.pathname.endsWith('/cost_report')),
-    ).toBe(true);
+    const usageQuery = captured.find((c) => c.url.pathname.endsWith('/usage_report/messages'))?.url.searchParams;
+    expect(usageQuery?.getAll('group_by[]')).toEqual(['model']);
+    expect(usageQuery?.get('workspace_ids[]')).toBe(workspaceId);
+
+    const costQuery = captured.find((c) => c.url.pathname.endsWith('/cost_report'))?.url.searchParams;
+    expect(costQuery?.getAll('group_by[]')).toEqual(['description', 'workspace_id']);
+    expect(costQuery?.has('workspace_ids[]')).toBe(false);
   });
 
   it('lấy nhiều trang theo cursor chính thức', async () => {

@@ -23,7 +23,7 @@ async function main(): Promise<void> {
   const user = await prisma.user.create({
     data: {
       email: 'demo@tokenscope.io',
-      name: 'Nguyễn Minh Anh',
+      name: 'Admin Token Scope',
       birthDate: new Date('1995-05-20T00:00:00.000Z'),
       passwordHash,
       isVerified: true,

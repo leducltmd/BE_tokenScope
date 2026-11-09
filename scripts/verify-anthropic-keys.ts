@@ -283,7 +283,7 @@ async function main() {
       `Secret API Key = missingWorkspace (${res.body.secretKey?.status})`,
     );
     assert(
-      String(res.body.message).includes('wsp_'),
+      String(res.body.message).includes('wrkspc_'),
       'Thông điệp hướng dẫn nhập Workspace ID',
     );
   }

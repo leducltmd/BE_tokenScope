@@ -25,6 +25,14 @@ model User {
   isVerified   Boolean   @default(false)
   isActive     Boolean   @default(true)
   lastLoginAt  DateTime?
+
+  /// Vai trò trong hệ thống: `user` (mặc định) hoặc `admin`.
+  ///
+  /// Tài khoản admin được cấp quyền truy cập API của module `admin` và
+  /// `crash-testing`. Việc kiểm tra thực tế vẫn dựa vào role trong DB **và**
+  /// danh sách email trong `ADMIN_EMAILS` (fallback cho môi trường demo).
+  role         String    @default("user")
+
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
@@ -35,7 +43,11 @@ model User {
   alerts       Alert[]
   usageRecords UsageRecord[]
 
+  appUsageEvents     AppUsageEvent[]
+  crashTestDevices   CrashTestDevice[]
+
   @@index([email])
+  @@index([role])
   @@map("users")
 }
 
@@ -224,4 +236,115 @@ model UsageRecord {
   @@index([userId, occurredAt])
   @@index([apiProviderId])
   @@map("usage_records")
+}
+
+/// Sự kiện sử dụng ứng dụng (app open, feature usage) — nguồn dữ liệu cho
+/// Admin Dashboard và thống kê "lượt sử dụng ứng dụng".
+///
+/// Khác với [UsageRecord] (ghi lại mỗi lần gọi API AI), model này ghi lại
+/// hành vi người dùng trong ứng dụng Flutter — tương đương với dữ liệu mà
+/// Firebase Analytics thu thập.
+model AppUsageEvent {
+  id        String   @id @default(uuid())
+  userId    String?
+  sessionId String?
+
+  /// Tên sự kiện: `app_open` | `app_close` | `feature_usage` | `screen_view`.
+  eventName String
+
+  /// Tên tính năng được sử dụng (ví dụ `connect_provider`, `export_report`).
+  feature   String?
+
+  /// Màn hình liên quan (dùng cho `screen_view`).
+  screen    String?
+
+  /// Thông tin bổ sung dạng JSON (không chứa PII).
+  metadata  String?
+
+  platform  String?
+  appVersion String?
+
+  occurredAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([userId, occurredAt])
+  @@index([eventName, occurredAt])
+  @@index([occurredAt])
+  @@map("app_usage_events")
+}
+
+/// Thiết bị Flutter đang chạy có thể nhận yêu cầu crash test.
+///
+/// Mỗi lần app khởi động, app đăng ký (hoặc cập nhật) một bản ghi ở đây kèm
+/// `deviceId` sinh ra cục bộ. Admin Web dùng danh sách này để biết thiết bị
+/// nào đang "online" và gửi lệnh crash.
+model CrashTestDevice {
+  id          String   @id @default(uuid())
+
+  /// Định danh thiết bị sinh bởi app (UUID lưu cục bộ).
+  deviceId    String   @unique
+
+  userId      String?
+  deviceName  String?
+  platform    String?
+  appVersion  String?
+
+  /// Token thiết bị dùng để app tự báo cáo trạng thái crash.
+  reportToken String?
+
+  isOnline    Boolean  @default(false)
+  lastSeenAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  crashTestRequests CrashTestRequest[]
+
+  @@index([userId])
+  @@index([lastSeenAt])
+  @@map("crash_test_devices")
+}
+
+/// Yêu cầu crash test do Admin Web phát ra.
+///
+/// Vòng đời: `pending` → `triggered` → `reported` (hoặc `failed`).
+/// App Flutter polling sẽ nhận yêu cầu ở trạng thái `pending`, kích hoạt
+/// crash có chủ đích rồi báo cáo lại trạng thái `triggered`/`reported`.
+model CrashTestRequest {
+  id          String   @id @default(uuid())
+
+  /// Yêu cầu dành riêng cho một thiết bị; null = gửi tới mọi thiết bị online.
+  deviceId    String?
+
+  /// Người admin đã phát ra yêu cầu.
+  requestedBy String?
+
+  /// Tên hiển thị của admin đã phát ra yêu cầu (snapshot tại thời điểm gửi).
+  requestedByName String?
+
+  /// `pending` | `triggered` | `reported` | `failed`.
+  status      String   @default("pending")
+
+  /// Lý do / ghi chú do admin nhập khi phát yêu cầu.
+  reason      String?
+
+  /// Payload phản hồi từ app (kết quả báo cáo Crashlytics).
+  result      String?
+
+  /// Số lần app đã nhận & xử lý yêu cầu.
+  attemptCount Int     @default(0)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  triggeredAt DateTime?
+  reportedAt  DateTime?
+
+  device CrashTestDevice? @relation(fields: [deviceId], references: [deviceId], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("crash_test_requests")
 }

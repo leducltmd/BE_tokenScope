@@ -58,6 +58,67 @@ export const config = {
   },
 
   /**
+   * Cấu hình Admin Dashboard.
+   *
+   * - `adminEmails` — danh sách email được coi là admin **kể cả khi role
+   *   trong DB chưa được đặt**. Tiện cho môi trường demo/lab.
+   * - `allowAdminByEmail` — bật/tắt cơ chế fallback bằng email.
+   */
+  admin: {
+    adminEmails: (process.env.ADMIN_EMAILS ?? '')
+      .split(',')
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean),
+    allowAdminByEmail:
+      (process.env.ADMIN_ALLOW_BY_EMAIL ?? 'true').toLowerCase() === 'true',
+  },
+
+  /**
+   * Cấu hình Crash Testing (chỉ dùng cho môi trường demo/testing).
+   *
+   * - `enabled` — bật/tắt toàn bộ tính năng. Mặc định tắt ở production.
+   * - `allowedEnvironments` — danh sách môi trường được phép kích hoạt crash.
+   */
+  crashTesting: {
+    enabled:
+      (process.env.CRASH_TESTING_ENABLED ?? 'false').toLowerCase() === 'true',
+    allowedEnvironments: (process.env.CRASH_TESTING_ENVIRONMENTS ?? 'development,staging,test,demo')
+      .split(',')
+      .map((env) => env.trim().toLowerCase())
+      .filter(Boolean),
+  },
+
+  /**
+   * Cấu hình Firebase Analytics (GA4 Data API).
+   *
+   * Dùng để đọc số liệu hành vi người dùng (app open, session, event) trực
+   * tiếp từ Firebase. Nếu thiếu `propertyId` hoặc `credentials` thì API
+   * `admin/analytics/firebase` sẽ trả về trạng thái "chưa cấu hình" — phần
+   * còn lại của Admin Dashboard vẫn hoạt động bình thường.
+   */
+  analytics: {
+    propertyId: (process.env.FIREBASE_ANALYTICS_PROPERTY_ID ?? '').trim(),
+    /**
+     * Service account JSON (đọc từ file khi biến trỏ tới đường dẫn,
+     * hoặc nội dung JSON thô).
+     */
+    credentials:
+      (process.env.FIREBASE_ANALYTICS_CREDENTIALS ?? '').trim() ||
+      (process.env.GOOGLE_APPLICATION_CREDENTIALS ?? '').trim(),
+  },
+
+  /**
+   * Cấu hình Firebase Crashlytics (chỉ đọc trạng thái).
+   *
+   * Crashlytics không có API đọc số liệu công khai — dữ liệu được xem trực
+   * tiếp trên Firebase Console. Backend chỉ cung cấấp trạng thái cấu hình
+   * và các yêu cầu crash test do Admin phát ra.
+   */
+  crashlytics: {
+    projectId: (process.env.FIREBASE_PROJECT_ID ?? 'tokenscope-5116d').trim(),
+  },
+
+  /**
    * Cấu hình OpenAI.
    *
    * - `apiKey` — Secret API Key (`OPENAI_API_KEY`): dùng để đọc danh sách model
@@ -114,6 +175,26 @@ export function getOrgAllowedUserIds(): string[] {
     .split(',')
     .map((id) => id.trim())
     .filter(Boolean);
+}
+
+/**
+ * Kiểm tra một email có nằm trong danh sách admin được cấu hình hay không.
+ */
+export function isAdminEmail(email: string): boolean {
+  if (!config.admin.allowAdminByEmail) return false;
+  return config.admin.adminEmails.includes(email.trim().toLowerCase());
+}
+
+/**
+ * Kiểm tra môi trường hiện tại có được phép kích hoạt crash test hay không.
+ *
+ * Ở `production` luôn trả về `false` — crash test chỉ dùng cho demo/testing.
+ */
+export function isCrashTestingAllowed(environment?: string): boolean {
+  if (!config.crashTesting.enabled) return false;
+  const env = (environment ?? config.env).trim().toLowerCase();
+  if (env === 'production') return false;
+  return config.crashTesting.allowedEnvironments.includes(env);
 }
 
 const LOCALHOST_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;

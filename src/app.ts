@@ -3,11 +3,14 @@ import express from 'express';
 
 import { isOriginAllowed } from './config';
 import { errorHandler, notFoundHandler } from './middlewares/error';
+import { adminRouter } from './modules/admin/admin.routes';
 import { authRouter } from './modules/auth/auth.routes';
 import { budgetsRouter } from './modules/budgets/budgets.routes';
+import { crashTestingRouter } from './modules/crash-testing/crash-testing.routes';
 import { projectsRouter } from './modules/projects/projects.routes';
 import { providersRouter } from './modules/providers/providers.routes';
 import { usageRouter } from './modules/usage/usage.routes';
+import { appUsageRouter } from './modules/usage/app-usage.routes';
 
 export function createApp(): express.Express {
   const app = express();
@@ -40,6 +43,15 @@ export function createApp(): express.Express {
   app.use('/api/usage', usageRouter);
   app.use('/api/projects', projectsRouter);
   app.use('/api/budgets', budgetsRouter);
+
+  // Admin Web — yêu cầu đăng nhập + quyền admin (kiểm tra trong router).
+  app.use('/api/admin', adminRouter);
+
+  // Crash Testing — phần Admin (requireAdmin) và phần Flutter App.
+  app.use('/api/crash-testing', crashTestingRouter);
+
+  // Ghi nhận sự kiện sử dụng ứng dụng từ Flutter App.
+  app.use('/api/app-usage', appUsageRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

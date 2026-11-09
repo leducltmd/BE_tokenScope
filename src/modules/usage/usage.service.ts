@@ -160,6 +160,8 @@ export async function listUsageRecords(
 /** Tổng hợp số liệu cho Dashboard / Providers. */
 export async function getUsageSummary(userId: string): Promise<{
   totalTokens: number;
+  inputTokens: number;
+  outputTokens: number;
   totalCost: number;
   requestCount: number;
   byProvider: {
@@ -175,8 +177,13 @@ export async function getUsageSummary(userId: string): Promise<{
     where: { userId },
     orderBy: { occurredAt: 'desc' },
     take: 5000,
-    include: {
-      apiProvider: { select: { providerType: true, name: true } },
+    select: {
+      totalTokens: true,
+      promptTokens: true,
+      completionTokens: true,
+      cost: true,
+      occurredAt: true,
+      apiProvider: { select: { providerType: true } },
     },
   });
 
@@ -190,12 +197,16 @@ export async function getUsageSummary(userId: string): Promise<{
   >();
 
   let totalTokens = 0;
+  let inputTokens = 0;
+  let outputTokens = 0;
   let totalCost = 0;
 
   for (const record of records) {
     const tokens = record.totalTokens;
     const cost = Number(record.cost ?? 0);
     totalTokens += tokens;
+    inputTokens += record.promptTokens;
+    outputTokens += record.completionTokens;
     totalCost += cost;
 
     const type = record.apiProvider.providerType;
@@ -218,6 +229,8 @@ export async function getUsageSummary(userId: string): Promise<{
 
   return {
     totalTokens,
+    inputTokens,
+    outputTokens,
     totalCost,
     requestCount: records.length,
     byProvider: [...byProviderMap.entries()].map(([providerType, value]) => ({
