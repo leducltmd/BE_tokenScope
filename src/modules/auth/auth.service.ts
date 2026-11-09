@@ -26,6 +26,8 @@ export interface AuthUser {
   avatarUrl: string | null;
   isVerified: boolean;
   createdAt: Date;
+  /** Vai trò trong hệ thống: `user` hoặc `admin`. */
+  role: string;
 }
 
 export interface AuthTokens {
@@ -72,6 +74,7 @@ function toAuthUser(user: {
   birthDate: Date | null;
   avatarUrl: string | null;
   isVerified: boolean;
+  role: string;
   createdAt: Date;
 }): AuthUser {
   return {
@@ -81,6 +84,7 @@ function toAuthUser(user: {
     birthDate: user.birthDate,
     avatarUrl: user.avatarUrl,
     isVerified: user.isVerified,
+    role: user.role,
     createdAt: user.createdAt,
   };
 }
