@@ -79,7 +79,7 @@ export interface AnthropicKeyCheckResult {
  *   thường, không cần Workspace ID.
  *
  * @param apiKey Secret API Key của Anthropic (bản rõ, chưa mã hoá).
- * @param workspaceId Workspace ID (tuỳ chọn) — `wsp_...`.
+ * @param workspaceId Workspace ID (tuỳ chọn) — `wrkspc_...`.
  */
 export async function checkAnthropicConnection(
   apiKey: string,
@@ -110,7 +110,7 @@ export async function checkAnthropicConnection(
         models: [],
         message:
           'API Key này chưa được gán vào Workspace nào. ' +
-          'Hãy nhập Anthropic Workspace ID (bắt đầu bằng "wsp_") ' +
+          'Hãy nhập Anthropic Workspace ID (ví dụ "wrkspc_...") ' +
           'để TokenScope gửi kèm header anthropic-workspace-id.',
         error: { ...error, kind: 'missingWorkspace' },
       };
@@ -181,15 +181,16 @@ export async function checkAnthropicAdminKey(
     };
   }
 
-  const now = Math.floor(Date.now() / 1000);
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const end = today.getTime() / 1000;
   const response = await anthropicRequest(ANTHROPIC_USAGE_REPORT_PATH, {
     credential: 'admin',
     credentials,
     query: {
-      starting_at: now - 60,
-      ending_at: now,
+      ...reportTimeRange(end - 86_400, end),
       bucket_width: '1d',
-      'group_by[]': 'model',
+      'workspace_ids[]': normalizeWorkspaceId(credentials.workspaceId) || undefined,
       limit: 1,
     },
   });
@@ -339,17 +340,18 @@ export async function fetchAnthropicUsageReport(
   let pages = 0;
   let hasMore = false;
   let nextPage: string | null = null;
+  const workspaceId = normalizeWorkspaceId(credentials.workspaceId);
 
   do {
     const response = await anthropicRequest(ANTHROPIC_USAGE_REPORT_PATH, {
       credential: 'admin',
       credentials,
       query: {
-        starting_at: query.startingAt,
-        ending_at: query.endingAt,
+        ...reportTimeRange(query.startingAt, query.endingAt),
         bucket_width: query.bucketWidth ?? '1d',
-        models: query.models,
+        'models[]': query.models,
         'group_by[]': 'model',
+        'workspace_ids[]': workspaceId || undefined,
         limit: query.limit,
         page,
       },
@@ -370,10 +372,15 @@ export async function fetchAnthropicUsageReport(
       const date = toDateKey(bucket?.starting_at ?? query.startingAt);
       const results: any[] = Array.isArray(bucket?.results) ? bucket.results : [];
       for (const item of results) {
+        const cacheCreation = item?.cache_creation;
+        const cacheCreationTokens = cacheCreation == null
+          ? num(item?.cache_creation_input_tokens)
+          : num(cacheCreation.ephemeral_1h_input_tokens) +
+            num(cacheCreation.ephemeral_5m_input_tokens);
         const inputTokens =
           num(item?.uncached_input_tokens) +
           num(item?.cache_read_input_tokens) +
-          num(item?.cache_creation_input_tokens);
+          cacheCreationTokens;
         const outputTokens = num(item?.output_tokens);
         const requests = num(item?.request_count);
         if (!inputTokens && !outputTokens && !requests) continue;
@@ -432,17 +439,17 @@ export async function fetchAnthropicCostReport(
   let hasMore = false;
   let nextPage: string | null = null;
   let currency: string | null = null;
+  const workspaceId = normalizeWorkspaceId(credentials.workspaceId);
+  const groupBy = workspaceId ? ['description', 'workspace_id'] : ['description'];
 
   do {
     const response = await anthropicRequest(ANTHROPIC_COST_REPORT_PATH, {
       credential: 'admin',
       credentials,
       query: {
-        starting_at: query.startingAt,
-        ending_at: query.endingAt,
-        bucket_width: query.bucketWidth ?? '1d',
-        models: query.models,
-        'group_by[]': 'model',
+        ...reportTimeRange(query.startingAt, query.endingAt),
+        bucket_width: '1d',
+        'group_by[]': groupBy,
         limit: query.limit,
         page,
       },
@@ -463,16 +470,22 @@ export async function fetchAnthropicCostReport(
       const date = toDateKey(bucket?.starting_at ?? query.startingAt);
       const results: any[] = Array.isArray(bucket?.results) ? bucket.results : [];
       for (const item of results) {
-        // Schema chính thức của Anthropic Cost Report: `cost` (chuỗi) và
-        // `currency`. Một số workspace dùng `cost_usd` / `amount` — hỗ trợ
-        // cả hai để không bỏ sót dữ liệu chi phí.
-        const amount = money(
-          item?.cost_usd ?? item?.cost ?? item?.amount ?? item?.amount_usd,
-        );
+        // Cost Report chỉ hỗ trợ gom nhóm theo workspace, nên lọc kết quả sau khi đọc.
+        if (workspaceId && item?.workspace_id !== workspaceId) continue;
+        const model = String(item?.model ?? 'unknown');
+        if (query.models?.length && !query.models.includes(model)) continue;
+
+        // `amount` là USD cent. Các trường USD cũ được giữ để tương thích.
+        const legacyAmount = item?.cost_usd ?? item?.amount_usd ?? item?.cost;
+        const amount = legacyAmount == null
+          ? money(item?.amount) / 100
+          : money(legacyAmount);
         const lineItem =
-          typeof item?.line_item === 'string' && item.line_item.length > 0
-            ? item.line_item
-            : null;
+          typeof item?.description === 'string' && item.description.length > 0
+            ? item.description
+            : typeof item?.line_item === 'string' && item.line_item.length > 0
+              ? item.line_item
+              : null;
 
         // Đơn vị tiền tệ có thể nằm ở cấp dòng hoặc cấp response.
         if (!currency && typeof item?.currency === 'string') {
@@ -481,7 +494,7 @@ export async function fetchAnthropicCostReport(
 
         points.push({
           date,
-          model: String(item?.model ?? 'unknown'),
+          model,
           lineItem,
           amount,
           quantity:
@@ -583,9 +596,17 @@ export async function fetchAnthropicReports(
   };
 }
 
-/** Chuyển Unix giây sang `YYYY-MM-DD` (UTC). */
+/** Anthropic yêu cầu thời gian báo cáo ở định dạng RFC 3339. */
+function reportTimeRange(startingAt: number, endingAt?: number) {
+  return {
+    starting_at: new Date(startingAt * 1000).toISOString(),
+    ending_at: endingAt === undefined ? undefined : new Date(endingAt * 1000).toISOString(),
+  };
+}
+
+/** Lấy ngày UTC từ mốc RFC 3339 hoặc Unix giây. */
 function toDateKey(value: Date | string | number): string {
-  const date = value instanceof Date ? value : new Date(value);
+  const date = value instanceof Date ? value : new Date(typeof value === 'number' ? value * 1000 : value);
   if (Number.isNaN(date.getTime())) return '';
   const month = `${date.getUTCMonth() + 1}`.padStart(2, '0');
   const day = `${date.getUTCDate()}`.padStart(2, '0');

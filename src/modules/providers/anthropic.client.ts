@@ -137,7 +137,7 @@ export function resolveAnthropicKey(
  * - `x-api-key` — khoá xác thực (secret hoặc admin, tuỳ `kind`).
  * - `anthropic-version` — bắt buộc theo yêu cầu của Anthropic.
  * - `content-type: application/json` — nội dung request.
- * - `anthropic-workspace-id` — chỉ thêm khi có Workspace ID.
+ * - `anthropic-workspace-id` — chỉ dùng cho khoá Secret khi có Workspace ID.
  */
 export function buildAnthropicHeaders(
   kind: AnthropicCredentialKind,
@@ -150,7 +150,7 @@ export function buildAnthropicHeaders(
   };
 
   const workspaceId = normalizeWorkspaceId(credentials.workspaceId);
-  if (workspaceId.length > 0) {
+  if (kind === 'secret' && workspaceId) {
     headers['anthropic-workspace-id'] = workspaceId;
   }
 

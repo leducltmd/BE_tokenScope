@@ -122,6 +122,9 @@ describe('Module Usage — API TokenScope', () => {
 
       expect(res.status).toBe(200);
       expect(typeof res.body.totalTokens).toBe('number');
+      expect(typeof res.body.inputTokens).toBe('number');
+      expect(typeof res.body.outputTokens).toBe('number');
+      expect(res.body.inputTokens + res.body.outputTokens).toBe(res.body.totalTokens);
       expect(typeof res.body.totalCost).toBe('number');
       expect(typeof res.body.requestCount).toBe('number');
       expect(Array.isArray(res.body.byProvider)).toBe(true);
