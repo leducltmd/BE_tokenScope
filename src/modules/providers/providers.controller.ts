@@ -1,7 +1,12 @@
 import type { NextFunction, Request, Response } from 'express';
+import { z } from 'zod';
 
 import * as providersService from './providers.service';
 import * as openaiOrgService from './openai.org.service';
+import { prisma } from '../../config/prisma';
+import { AppError, NotFoundError } from '../../utils/errors';
+import { readGeminiDemoCall } from '../usage/gemini-call-import';
+import { geminiUsageMetrics, readGeminiUsage } from './gemini-usage.service';
 import {
   toArray,
   type CreateProviderDto,
@@ -16,6 +21,14 @@ import type {
   CostGroupBy,
   UsageGroupBy,
 } from './openai.service';
+
+const geminiUsageSnapshotSchema = z.object({
+  project: z.string(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  model: z.string().min(1),
+  inputTokensApproximate: z.string().regex(/^\d+$/),
+  outputTokens: z.string().regex(/^\d+$/),
+});
 
 /** Số giây hiện tại — dùng làm mốc kết thúc mặc định. */
 function nowSeconds(): number {
@@ -185,6 +198,101 @@ export async function sync(
     next(error);
   }
 }
+
+export async function geminiUsage(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const provider = await prisma.apiProvider.findFirst({
+      where: { id: req.params.id, userId: req.user!.id, providerType: 'google' },
+      select: { id: true },
+    });
+    if (!provider) throw new NotFoundError('Không tìm thấy kết nối Gemini.');
+
+    const configuredProviderId = process.env.GEMINI_MONITORING_PROVIDER_ID?.trim();
+    const project = process.env.GEMINI_MONITORING_PROJECT_ID?.trim();
+    const accessToken = process.env.GEMINI_MONITORING_ACCESS_TOKEN?.trim();
+    if (configuredProviderId !== provider.id || !project) {
+      throw new AppError(
+        503,
+        'Kết nối Gemini này chưa được cấu hình Cloud Monitoring trên máy chủ TokenScope.',
+        'GEMINI_MONITORING_NOT_CONFIGURED',
+      );
+    }
+
+    const latestCall = await readGeminiDemoCall();
+    if (latestCall) {
+      const { model, usageMetadata: counts } = latestCall;
+      const tokens = [
+        ['Token đầu vào', counts.promptTokenCount ?? 0],
+        ['Token câu trả lời', counts.candidatesTokenCount ?? 0],
+        ['Token suy luận', counts.thoughtsTokenCount ?? 0],
+        ['Tổng token của lượt gọi', counts.totalTokenCount],
+      ] as const;
+      res.set('Cache-Control', 'no-store').json({
+        latestCall: true,
+        model: model || 'Gemini',
+        metrics: tokens.map(([label, count]) => ({
+          label,
+          total: String(count),
+          rows: [],
+        })),
+      });
+      return;
+    }
+
+    const snapshotConfig = process.env.GEMINI_USAGE_DEMO_SNAPSHOT;
+    if (snapshotConfig) {
+      const snapshot = geminiUsageSnapshotSchema.parse(JSON.parse(snapshotConfig));
+      if (snapshot.project !== project) {
+        throw new AppError(503, 'Project của dữ liệu đã ghi nhận không khớp cấu hình.', 'GEMINI_SNAPSHOT_PROJECT_MISMATCH');
+      }
+      res.set('Cache-Control', 'no-store').json({
+        project,
+        snapshotDate: snapshot.date,
+        metrics: [
+          {
+            label: 'Token đầu vào (xấp xỉ)',
+            rows: [{ model: snapshot.model, tokens: snapshot.inputTokensApproximate }],
+          },
+          {
+            label: 'Token đầu ra',
+            rows: [{ model: snapshot.model, tokens: snapshot.outputTokens }],
+          },
+        ],
+      });
+      return;
+    }
+
+    const { start, end, metrics } = await readGeminiUsage(project, accessToken, 28).catch(() => {
+      throw new AppError(
+        503,
+        'Máy chủ TokenScope chưa xác thực được với Google Cloud Monitoring.',
+        'GEMINI_MONITORING_AUTH_FAILED',
+      );
+    });
+    res.set('Cache-Control', 'no-store').json({
+      project,
+      start,
+      end,
+      metrics: metrics.map((result, index) => ({
+        label: geminiUsageMetrics[index][0],
+        error: result.status === 'rejected' ? 'Không đọc được chỉ số từ Cloud Monitoring.' : null,
+        rows: result.status === 'fulfilled'
+          ? [...result.value].map(([model, tokens]) => ({ model, tokens: String(tokens) }))
+          : [],
+        total: result.status === 'fulfilled' && index === 0 && result.value.size
+          ? String([...result.value.values()].reduce((sum, tokens) => sum + tokens, 0n))
+          : null,
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 
 /**
  * GET /api/providers/openai/models — Danh sách model OpenAI.
