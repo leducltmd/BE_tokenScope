@@ -1,6 +1,7 @@
 import { prisma } from '../../config/prisma';
 import { NotFoundError } from '../../utils/errors';
 import { findProviderDefinition } from '../providers/providers.catalog';
+import { importGeminiDemoCall } from './gemini-call-import';
 import type { UsageQueryDto } from './usage.validation';
 
 /** Một bản ghi usage trả về cho client. */
@@ -112,6 +113,7 @@ export async function listUsageRecords(
   userId: string,
   query: UsageQueryDto,
 ): Promise<UsageListResult> {
+  await importGeminiDemoCall(userId);
   const where: Record<string, unknown> = { userId };
 
   if (query.providerId) {
@@ -173,6 +175,7 @@ export async function getUsageSummary(userId: string): Promise<{
   }[];
   daily: { date: string; totalTokens: number; totalCost: number }[];
 }> {
+  await importGeminiDemoCall(userId);
   const records = await prisma.usageRecord.findMany({
     where: { userId },
     orderBy: { occurredAt: 'desc' },

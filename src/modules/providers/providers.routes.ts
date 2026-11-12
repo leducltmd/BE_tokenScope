@@ -5,6 +5,7 @@ import { validate, validateQuery } from '../../middlewares/validate';
 import {
   catalog,
   create,
+  geminiUsage,
   list,
   openAICosts,
   openAIModels,
@@ -56,3 +57,4 @@ providersRouter.patch(
 providersRouter.delete('/:id', remove);
 providersRouter.post('/:id/check', recheck);
 providersRouter.post('/:id/sync', sync);
+providersRouter.get('/:id/gemini-usage', geminiUsage);
