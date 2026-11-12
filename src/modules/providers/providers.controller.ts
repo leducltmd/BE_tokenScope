@@ -211,17 +211,6 @@ export async function geminiUsage(
     });
     if (!provider) throw new NotFoundError('Không tìm thấy kết nối Gemini.');
 
-    const configuredProviderId = process.env.GEMINI_MONITORING_PROVIDER_ID?.trim();
-    const project = process.env.GEMINI_MONITORING_PROJECT_ID?.trim();
-    const accessToken = process.env.GEMINI_MONITORING_ACCESS_TOKEN?.trim();
-    if (configuredProviderId !== provider.id || !project) {
-      throw new AppError(
-        503,
-        'Kết nối Gemini này chưa được cấu hình Cloud Monitoring trên máy chủ TokenScope.',
-        'GEMINI_MONITORING_NOT_CONFIGURED',
-      );
-    }
-
     const latestCall = await readGeminiDemoCall();
     if (latestCall) {
       const { model, usageMetadata: counts } = latestCall;
@@ -241,6 +230,17 @@ export async function geminiUsage(
         })),
       });
       return;
+    }
+
+    const configuredProviderId = process.env.GEMINI_MONITORING_PROVIDER_ID?.trim();
+    const project = process.env.GEMINI_MONITORING_PROJECT_ID?.trim();
+    const accessToken = process.env.GEMINI_MONITORING_ACCESS_TOKEN?.trim();
+    if (configuredProviderId !== provider.id || !project) {
+      throw new AppError(
+        503,
+        'Kết nối Gemini này chưa được cấu hình Cloud Monitoring trên máy chủ TokenScope.',
+        'GEMINI_MONITORING_NOT_CONFIGURED',
+      );
     }
 
     const snapshotConfig = process.env.GEMINI_USAGE_DEMO_SNAPSHOT;

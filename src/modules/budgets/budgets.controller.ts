@@ -15,3 +15,17 @@ export async function overview(
     next(error);
   }
 }
+
+/** PUT/POST /api/budgets — Cập nhật hạn mức ngân sách của người dùng. */
+export async function update(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const result = await budgetsService.updateBudget(req.user!.id, req.body);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}

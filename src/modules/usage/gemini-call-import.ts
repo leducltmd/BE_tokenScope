@@ -18,8 +18,17 @@ const callSchema = z.object({
   }),
 });
 
+function getDemoCallFile(): string | undefined {
+  return (
+    process.env.GEMINI_USAGE_DEMO_CALL_FILE?.trim() ||
+    (process.env.LOCALAPPDATA
+      ? join(process.env.LOCALAPPDATA, 'TokenScope-Gemini-last-call.json')
+      : undefined)
+  );
+}
+
 export async function readGeminiDemoCall() {
-  const filename = process.env.GEMINI_USAGE_DEMO_CALL_FILE?.trim();
+  const filename = getDemoCallFile();
   return filename ? readCallFile(filename) : undefined;
 }
 
@@ -49,14 +58,19 @@ async function readCallFile(filename: string) {
 }
 
 export async function importGeminiDemoCall(userId: string): Promise<void> {
-  const providerId = process.env.GEMINI_MONITORING_PROVIDER_ID?.trim();
-  const latestCallFile = process.env.GEMINI_USAGE_DEMO_CALL_FILE?.trim();
-  if (!providerId || !latestCallFile) return;
+  const latestCallFile = getDemoCallFile();
+  if (!latestCallFile) return;
 
-  const provider = await prisma.apiProvider.findFirst({
-    where: { id: providerId, userId, providerType: 'google' },
-    select: { id: true, projectId: true },
-  });
+  const providerId = process.env.GEMINI_MONITORING_PROVIDER_ID?.trim();
+  const provider = providerId
+    ? await prisma.apiProvider.findFirst({
+        where: { id: providerId, userId, providerType: 'google' },
+        select: { id: true, projectId: true },
+      })
+    : await prisma.apiProvider.findFirst({
+        where: { userId, providerType: 'google' },
+        select: { id: true, projectId: true },
+      });
   if (!provider) return;
 
   const pendingDirectory = `${latestCallFile}.pending`;

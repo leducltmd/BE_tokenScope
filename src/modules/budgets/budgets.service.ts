@@ -64,6 +64,109 @@ function periodLabel(start: Date, end: Date): string {
 }
 
 /**
+ * Tự động khởi tạo ngân sách mặc định cho tài khoản nếu chưa có,
+ * hoặc tự động tạo ngân sách cho các nhà cung cấp mới kết nối.
+ */
+async function ensureBudgets(userId: string): Promise<void> {
+  const now = new Date();
+  const pStart = startOfMonth(now);
+  const pEnd = endOfMonth(now);
+
+  const [existingBudgets, providers] = await Promise.all([
+    prisma.budget.findMany({ where: { userId } }),
+    prisma.apiProvider.findMany({ where: { userId, status: 'active' } }),
+  ]);
+
+  if (providers.length > 0) {
+    const budgetedProviderIds = new Set(
+      existingBudgets
+        .map((b) => b.apiProviderId)
+        .filter((id): id is string => Boolean(id)),
+    );
+
+    const missingProviders = providers.filter(
+      (p) => !budgetedProviderIds.has(p.id),
+    );
+
+    if (missingProviders.length > 0) {
+      await prisma.budget.createMany({
+        data: missingProviders.map((provider) => ({
+          userId,
+          apiProviderId: provider.id,
+          monthlyLimit: 500,
+          currentSpend: 0,
+          warningPercent: 80,
+          periodStart: pStart,
+          periodEnd: pEnd,
+        })),
+      });
+    }
+  } else if (existingBudgets.length === 0) {
+    await prisma.budget.create({
+      data: {
+        userId,
+        monthlyLimit: 1000,
+        currentSpend: 0,
+        warningPercent: 80,
+        periodStart: pStart,
+        periodEnd: pEnd,
+      },
+    });
+  }
+}
+
+/**
+ * Cập nhật hạn mức ngân sách của người dùng.
+ */
+export async function updateBudget(
+  userId: string,
+  data: {
+    totalLimit?: number;
+    warningPercent?: number;
+    providerBudgets?: Array<{ apiProviderId: string; monthlyLimit: number }>;
+  },
+): Promise<BudgetOverview> {
+  await ensureBudgets(userId);
+
+  const budgets = await prisma.budget.findMany({ where: { userId } });
+  const warningPercent = data.warningPercent !== undefined ? Math.round(data.warningPercent) : 80;
+
+  if (data.providerBudgets && data.providerBudgets.length > 0) {
+    for (const pb of data.providerBudgets) {
+      await prisma.budget.updateMany({
+        where: { userId, apiProviderId: pb.apiProviderId },
+        data: { monthlyLimit: pb.monthlyLimit, warningPercent },
+      });
+    }
+  } else if (data.totalLimit !== undefined && data.totalLimit >= 0) {
+    const providerBudgets = budgets.filter((b) => b.apiProviderId !== null);
+    if (providerBudgets.length > 0) {
+      const perProvider = Number((data.totalLimit / providerBudgets.length).toFixed(2));
+      for (const b of providerBudgets) {
+        await prisma.budget.update({
+          where: { id: b.id },
+          data: { monthlyLimit: perProvider, warningPercent },
+        });
+      }
+    } else {
+      for (const b of budgets) {
+        await prisma.budget.update({
+          where: { id: b.id },
+          data: { monthlyLimit: data.totalLimit, warningPercent },
+        });
+      }
+    }
+  } else if (data.warningPercent !== undefined) {
+    await prisma.budget.updateMany({
+      where: { userId },
+      data: { warningPercent },
+    });
+  }
+
+  return getBudgetOverview(userId);
+}
+
+/**
  * Lấy toàn bộ số liệu ngân sách thật của người dùng trong tháng hiện tại.
  *
  * - `spent` được tính từ bảng `usage_records` (chi phí thật đã ghi nhận).
@@ -72,6 +175,7 @@ function periodLabel(start: Date, end: Date): string {
 export async function getBudgetOverview(
   userId: string,
 ): Promise<BudgetOverview> {
+  await ensureBudgets(userId);
   const now = new Date();
   const budgets = await prisma.budget.findMany({
     where: { userId },
